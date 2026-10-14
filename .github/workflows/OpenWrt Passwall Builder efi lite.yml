@@ -129,20 +129,29 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
 
-        EFI_IMG=$(find . -maxdepth 1 -iname "*combined-efi*" -type f ! -name "*.gz" | head -n1)
-        if [ -z "$EFI_IMG" ]; then
-          echo "::error::未找到 combined-efi 镜像文件"
-          exit 1
-        fi
-        echo "找到镜像: $EFI_IMG"
-
-        gzip -kf "$EFI_IMG"
-        EFI_GZ="$(basename "$EFI_IMG").gz"
-
-        sha256sum "$EFI_GZ" > "${EFI_GZ}.sha256"
+        echo "编译产物列表："
+        ls -lh
 
         mkdir -p $GITHUB_WORKSPACE/release_files
-        cp "$EFI_GZ" "${EFI_GZ}.sha256" $GITHUB_WORKSPACE/release_files/
+
+        # R2S：收集 ext4 镜像（sysupgrade / factory），兼容已压缩和未压缩两种情况
+        IMGS=$(find . -maxdepth 1 -type f -iname "*ext4*" \
+          \( -name "*.img" -o -name "*.img.gz" \))
+        if [ -z "$IMGS" ]; then
+          echo "::error::未找到 ext4 镜像文件"
+          exit 1
+        fi
+
+        for f in $IMGS; do
+          echo "找到镜像: $f"
+          case "$f" in
+            *.gz) GZ="$f" ;;
+            *) gzip -kf "$f"; GZ="$f.gz" ;;
+          esac
+          NAME=$(basename "$GZ")
+          cp "$GZ" $GITHUB_WORKSPACE/release_files/
+          (cd $GITHUB_WORKSPACE/release_files && sha256sum "$NAME" > "$NAME.sha256")
+        done
 
         # 保留所有 .buildinfo 文件
         find . -maxdepth 1 -iname "*.buildinfo" -type f -exec cp {} $GITHUB_WORKSPACE/release_files/ \;
